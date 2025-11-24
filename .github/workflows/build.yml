@@ -55,22 +55,16 @@ jobs:
         zipStorePath=wrapper/dists
         EOF
         
-        # Download gradle-wrapper.jar
-        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: 8.7
         
-        # Create gradlew script
-        cat > gradlew << 'EOF'
-        #!/bin/sh
-        
-        DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
-        APP_NAME="Gradle"
-        APP_BASE_NAME=${0##*/}
-        APP_HOME=$( cd "${0%/*}" && pwd )
-        
-        exec "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
-        EOF
-        
-        chmod +x gradlew
+    - name: Generate Gradle Wrapper
+      run: gradle wrapper --gradle-version=8.7
+      
+    - name: Make Gradlew Executable
+      run: chmod +x gradlew
 
     - name: Create Root Build Files
       run: |
@@ -854,12 +848,6 @@ jobs:
         </resources>
         EOF
 
-    - name: Validate Gradle Setup
-      run: |
-        echo "Validating Gradle wrapper..."
-        ls -la gradle/wrapper/
-        ls -la gradlew
-        
     - name: Build Debug APK
       run: |
         ./gradlew clean
