@@ -17,17 +17,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup JDK
+    - name: Setup JDK 17
       uses: actions/setup-java@v4
       with:
-        # Using Java 17 for compatibility with AGP 8.x
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Create Project Files and Structure
+    - name: Create Project Structure
       run: |
-        # 1. REMOVE: Skip creating gradle/wrapper/ and gradlew script since we are not using the wrapper
-        
         # Create directory structure
         mkdir -p app/src/main/java/com/nytv/live/data/model
         mkdir -p app/src/main/java/com/nytv/live/data/network
@@ -38,7 +35,6 @@ jobs:
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/drawable
-        mkdir -p app/src/main/res/drawable-v24
         mkdir -p app/src/main/res/anim
         mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/res/mipmap-hdpi
@@ -46,8 +42,39 @@ jobs:
         mkdir -p app/src/main/res/mipmap-xhdpi
         mkdir -p app/src/main/res/mipmap-xxhdpi
         mkdir -p app/src/main/res/mipmap-xxxhdpi
+        mkdir -p gradle/wrapper
+
+    - name: Setup Gradle Wrapper
+      run: |
+        # Create gradle-wrapper.properties
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
         
-        # Create settings.gradle
+        # Download gradle-wrapper.jar
+        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
+        
+        # Create gradlew script
+        cat > gradlew << 'EOF'
+        #!/bin/sh
+        
+        DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+        APP_NAME="Gradle"
+        APP_BASE_NAME=${0##*/}
+        APP_HOME=$( cd "${0%/*}" && pwd )
+        
+        exec "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
+        EOF
+        
+        chmod +x gradlew
+
+    - name: Create Root Build Files
+      run: |
+        # settings.gradle
         cat > settings.gradle << 'EOF'
         pluginManagement {
             repositories {
@@ -67,15 +94,16 @@ jobs:
         include ':app'
         EOF
         
-        # Create gradle.properties
+        # gradle.properties
         cat > gradle.properties << 'EOF'
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         android.enableJetifier=true
         kotlin.code.style=official
+        android.nonTransitiveRClass=false
         EOF
         
-        # Create build.gradle (Project)
+        # build.gradle (Project)
         cat > build.gradle << 'EOF'
         buildscript {
             ext.kotlin_version = '1.9.20'
@@ -89,15 +117,20 @@ jobs:
             }
         }
 
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+
         task clean(type: Delete) {
             delete rootProject.buildDir
         }
         EOF
-        
-        # --- Create all remaining files as in original script ---
-        # (All the 'cat > file << EOF' blocks for app/build.gradle, resources, and Kotlin files)
-        
-        # Create app/build.gradle
+
+    - name: Create App Build File
+      run: |
         cat > app/build.gradle << 'EOF'
         plugins {
             id 'com.android.application'
@@ -120,7 +153,7 @@ jobs:
 
             buildTypes {
                 release {
-                    minifyEnabled true
+                    minifyEnabled false
                     proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                 }
             }
@@ -162,9 +195,8 @@ jobs:
             implementation 'com.google.code.gson:gson:2.10.1'
         }
         EOF
-
-        # ... (Include all other 'cat > file << EOF' blocks for proguard, AndroidManifest, Kotlin, and resources here) ...
-
+        
+        # proguard-rules.pro
         cat > app/proguard-rules.pro << 'EOF'
         -keep class com.nytv.live.data.model.** { *; }
         -keepclassmembers class * {
@@ -173,7 +205,9 @@ jobs:
         -keep class androidx.media3.** { *; }
         -dontwarn androidx.media3.**
         EOF
-        
+
+    - name: Create AndroidManifest
+      run: |
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -213,7 +247,10 @@ jobs:
             </application>
         </manifest>
         EOF
-        
+
+    - name: Create Kotlin Source Files
+      run: |
+        # NYTVApplication.kt
         cat > app/src/main/java/com/nytv/live/NYTVApplication.kt << 'EOF'
         package com.nytv.live
 
@@ -226,6 +263,7 @@ jobs:
         }
         EOF
         
+        # Channel.kt
         cat > app/src/main/java/com/nytv/live/data/model/Channel.kt << 'EOF'
         package com.nytv.live.data.model
 
@@ -240,12 +278,10 @@ jobs:
             @SerializedName("link") val link: String,
             @SerializedName("cookie") val cookie: String? = null,
             @SerializedName("drmLicense") val drmLicense: String? = null
-        ) : Parcelable {
-            val drmKeyId: String? get() = drmLicense?.split(":")?.getOrNull(0)
-            val drmKey: String? get() = drmLicense?.split(":")?.getOrNull(1)
-        }
+        ) : Parcelable
         EOF
         
+        # ApiService.kt
         cat > app/src/main/java/com/nytv/live/data/network/ApiService.kt << 'EOF'
         package com.nytv.live.data.network
 
@@ -273,7 +309,7 @@ jobs:
                     .client(
                         OkHttpClient.Builder()
                             .addInterceptor(HttpLoggingInterceptor().apply {
-                                level = HttpLoggingInterceptor.Level.BODY
+                                level = HttpLoggingInterceptor.Level.BASIC
                             })
                             .connectTimeout(30, TimeUnit.SECONDS)
                             .readTimeout(30, TimeUnit.SECONDS)
@@ -285,6 +321,7 @@ jobs:
         }
         EOF
         
+        # ChannelRepository.kt
         cat > app/src/main/java/com/nytv/live/data/repository/ChannelRepository.kt << 'EOF'
         package com.nytv.live.data.repository
 
@@ -310,6 +347,7 @@ jobs:
         }
         EOF
         
+        # MainViewModel.kt
         cat > app/src/main/java/com/nytv/live/ui/viewmodel/MainViewModel.kt << 'EOF'
         package com.nytv.live.ui.viewmodel
 
@@ -356,114 +394,159 @@ jobs:
                 _filteredChannels.value = if (query.isBlank()) allChannels 
                     else allChannels.filter { it.name.contains(query, ignoreCase = true) }
             }
-            
-            fun getChannelCount(): Int = _filteredChannels.value?.size ?: 0
         }
         EOF
-        
+
+    - name: Create Activity Files
+      run: |
+        # SplashActivity.kt
         cat > app/src/main/java/com/nytv/live/ui/activity/SplashActivity.kt << 'EOF'
         package com.nytv.live.ui.activity
 
-        import android.animation.AnimatorSet
-        import android.animation.ObjectAnimator
         import android.content.Intent
         import android.os.Bundle
         import android.os.Handler
         import android.os.Looper
-        import android.view.View
-        import android.view.animation.AccelerateDecelerateInterpolator
-        import android.view.animation.BounceInterpolator
-        import android.widget.ImageView
-        import android.widget.TextView
         import androidx.appcompat.app.AppCompatActivity
         import com.nytv.live.R
 
         class SplashActivity : AppCompatActivity() {
-            private val splashDuration = 3000L
-            
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
                 setContentView(R.layout.activity_splash)
                 
-                val logo = findViewById<ImageView>(R.id.splashLogo)
-                val appName = findViewById<TextView>(R.id.appName)
-                val tagline = findViewById<TextView>(R.id.tagline)
-                
-                animateSplashScreen(logo, appName, tagline)
-                
                 Handler(Looper.getMainLooper()).postDelayed({
                     startActivity(Intent(this, MainActivity::class.java))
-                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
                     finish()
-                }, splashDuration)
+                }, 2000)
             }
+        }
+        EOF
+        
+        # MainActivity.kt
+        cat > app/src/main/java/com/nytv/live/ui/activity/MainActivity.kt << 'EOF'
+        package com.nytv.live.ui.activity
+
+        import android.content.Intent
+        import android.os.Bundle
+        import android.text.Editable
+        import android.text.TextWatcher
+        import android.view.View
+        import android.widget.EditText
+        import android.widget.ProgressBar
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.lifecycle.ViewModelProvider
+        import androidx.recyclerview.widget.GridLayoutManager
+        import androidx.recyclerview.widget.RecyclerView
+        import com.nytv.live.R
+        import com.nytv.live.data.model.Channel
+        import com.nytv.live.ui.adapter.ChannelAdapter
+        import com.nytv.live.ui.viewmodel.MainViewModel
+
+        class MainActivity : AppCompatActivity() {
+            private lateinit var viewModel: MainViewModel
+            private lateinit var adapter: ChannelAdapter
             
-            private fun animateSplashScreen(logo: ImageView, appName: TextView, tagline: TextView) {
-                logo.apply {
-                    alpha = 0f
-                    scaleX = 0.3f
-                    scaleY = 0.3f
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_main)
+                
+                viewModel = ViewModelProvider(this)[MainViewModel::class.java]
+                
+                val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
+                val searchInput = findViewById<EditText>(R.id.searchInput)
+                val loading = findViewById<ProgressBar>(R.id.loading)
+                val errorText = findViewById<TextView>(R.id.errorText)
+                val resultsCount = findViewById<TextView>(R.id.resultsCount)
+                
+                adapter = ChannelAdapter { channel -> 
+                    val intent = Intent(this, PlayerActivity::class.java)
+                    intent.putExtra("CHANNEL", channel)
+                    startActivity(intent)
                 }
-                appName.apply {
-                    alpha = 0f
-                    translationY = 50f
-                }
-                tagline.apply {
-                    alpha = 0f
-                    translationY = 30f
+                recyclerView.layoutManager = GridLayoutManager(this, 2)
+                recyclerView.adapter = adapter
+                
+                searchInput.addTextChangedListener(object : TextWatcher {
+                    override fun afterTextChanged(s: Editable?) {
+                        viewModel.searchChannels(s?.toString() ?: "")
+                    }
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
+                
+                viewModel.filteredChannels.observe(this) { channels ->
+                    adapter.updateChannels(channels)
+                    resultsCount.text = "${channels.size} channels"
                 }
                 
-                val logoScaleX = ObjectAnimator.ofFloat(logo, View.SCALE_X, 0.3f, 1.1f, 1f)
-                val logoScaleY = ObjectAnimator.ofFloat(logo, View.SCALE_Y, 0.3f, 1.1f, 1f)
-                val logoAlpha = ObjectAnimator.ofFloat(logo, View.ALPHA, 0f, 1f)
-                
-                val logoAnimSet = AnimatorSet().apply {
-                    playTogether(logoScaleX, logoScaleY, logoAlpha)
-                    duration = 800
-                    interpolator = BounceInterpolator()
+                viewModel.isLoading.observe(this) { isLoading ->
+                    loading.visibility = if (isLoading) View.VISIBLE else View.GONE
                 }
                 
-                val nameAlpha = ObjectAnimator.ofFloat(appName, View.ALPHA, 0f, 1f)
-                val nameTranslation = ObjectAnimator.ofFloat(appName, View.TRANSLATION_Y, 50f, 0f)
-                val nameAnimSet = AnimatorSet().apply {
-                    playTogether(nameAlpha, nameTranslation)
-                    duration = 600
-                    interpolator = AccelerateDecelerateInterpolator()
-                    startDelay = 400
-                }
-                
-                val taglineAlpha = ObjectAnimator.ofFloat(tagline, View.ALPHA, 0f, 1f)
-                val taglineTranslation = ObjectAnimator.ofFloat(tagline, View.TRANSLATION_Y, 30f, 0f)
-                val taglineAnimSet = AnimatorSet().apply {
-                    playTogether(taglineAlpha, taglineTranslation)
-                    duration = 600
-                    interpolator = AccelerateDecelerateInterpolator()
-                    startDelay = 700
-                }
-                
-                val rotateAnim = ObjectAnimator.ofFloat(logo, View.ROTATION, 0f, 360f).apply {
-                    duration = 1000
-                    startDelay = 1200
-                    interpolator = AccelerateDecelerateInterpolator()
-                }
-                
-                AnimatorSet().apply {
-                    playSequentially(logoAnimSet, nameAnimSet, taglineAnimSet, rotateAnim)
-                    start()
+                viewModel.error.observe(this) { error ->
+                    errorText.text = error ?: ""
+                    errorText.visibility = if (error != null) View.VISIBLE else View.GONE
                 }
             }
         }
         EOF
         
+        # PlayerActivity.kt
+        cat > app/src/main/java/com/nytv/live/ui/activity/PlayerActivity.kt << 'EOF'
+        package com.nytv.live.ui.activity
+
+        import android.os.Bundle
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.media3.common.MediaItem
+        import androidx.media3.common.util.UnstableApi
+        import androidx.media3.exoplayer.ExoPlayer
+        import androidx.media3.ui.PlayerView
+        import com.nytv.live.R
+        import com.nytv.live.data.model.Channel
+
+        @UnstableApi
+        class PlayerActivity : AppCompatActivity() {
+            private var player: ExoPlayer? = null
+            
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_player)
+                
+                val channel = intent.getParcelableExtra<Channel>("CHANNEL")
+                val playerView = findViewById<PlayerView>(R.id.playerView)
+                val channelTitle = findViewById<TextView>(R.id.channelTitle)
+                
+                channel?.let {
+                    channelTitle.text = it.name
+                    player = ExoPlayer.Builder(this).build()
+                    playerView.player = player
+                    
+                    val mediaItem = MediaItem.fromUri(it.link)
+                    player?.setMediaItem(mediaItem)
+                    player?.prepare()
+                    player?.play()
+                }
+                
+                findViewById<View>(R.id.backButton).setOnClickListener { finish() }
+            }
+            
+            override fun onDestroy() {
+                super.onDestroy()
+                player?.release()
+            }
+        }
+        EOF
+        
+        # ChannelAdapter.kt
         cat > app/src/main/java/com/nytv/live/ui/adapter/ChannelAdapter.kt << 'EOF'
         package com.nytv.live.ui.adapter
 
-        import android.animation.AnimatorSet
-        import android.animation.ObjectAnimator
         import android.view.LayoutInflater
         import android.view.View
         import android.view.ViewGroup
-        import android.view.animation.AccelerateDecelerateInterpolator
         import android.widget.ImageView
         import android.widget.TextView
         import androidx.recyclerview.widget.RecyclerView
@@ -490,28 +573,13 @@ jobs:
             
             override fun onBindViewHolder(holder: ChannelViewHolder, position: Int) {
                 holder.bind(channels[position])
-                animateItem(holder.itemView, position)
             }
             
             override fun getItemCount() = channels.size
             
-            private fun animateItem(view: View, position: Int) {
-                view.alpha = 0f
-                view.translationY = 50f
-                
-                view.animate()
-                    .alpha(1f)
-                    .translationY(0f)
-                    .setDuration(400)
-                    .setStartDelay((position * 50).toLong())
-                    .setInterpolator(AccelerateDecelerateInterpolator())
-                    .start()
-            }
-            
             inner class ChannelViewHolder(view: View) : RecyclerView.ViewHolder(view) {
                 private val logo: ImageView = view.findViewById(R.id.channelLogo)
                 private val name: TextView = view.findViewById(R.id.channelName)
-                private val badge: TextView = view.findViewById(R.id.liveBadge)
                 
                 fun bind(channel: Channel) {
                     name.text = channel.name
@@ -520,482 +588,172 @@ jobs:
                         .placeholder(R.drawable.ic_tv_placeholder)
                         .into(logo)
                     
-                    itemView.setOnClickListener {
-                        animateClick()
-                        onChannelClick(channel)
-                    }
-                }
-                
-                private fun animateClick() {
-                    val scaleDown = AnimatorSet().apply {
-                        playTogether(
-                            ObjectAnimator.ofFloat(itemView, View.SCALE_X, 1f, 0.95f),
-                            ObjectAnimator.ofFloat(itemView, View.SCALE_Y, 1f, 0.95f)
-                        )
-                        duration = 100
-                    }
-                    
-                    val scaleUp = AnimatorSet().apply {
-                        playTogether(
-                            ObjectAnimator.ofFloat(itemView, View.SCALE_X, 0.95f, 1f),
-                            ObjectAnimator.ofFloat(itemView, View.SCALE_Y, 0.95f, 1f)
-                        )
-                        duration = 100
-                    }
-                    
-                    AnimatorSet().apply {
-                        playSequentially(scaleDown, scaleUp)
-                        start()
-                    }
+                    itemView.setOnClickListener { onChannelClick(channel) }
                 }
             }
         }
         EOF
-        
-        cat > app/src/main/java/com/nytv/live/ui/activity/MainActivity.kt << 'EOF'
-        package com.nytv.live.ui.activity
 
-        import android.content.Intent
-        import android.os.Bundle
-        import android.text.Editable
-        import android.text.TextWatcher
-        import android.view.View
-        import android.view.animation.AnimationUtils
-        import android.widget.EditText
-        import android.widget.ImageButton
-        import android.widget.ProgressBar
-        import android.widget.TextView
-        import androidx.appcompat.app.AppCompatActivity
-        import androidx.lifecycle.ViewModelProvider
-        import androidx.recyclerview.widget.GridLayoutManager
-        import androidx.recyclerview.widget.RecyclerView
-        import com.google.android.material.snackbar.Snackbar
-        import com.nytv.live.R
-        import com.nytv.live.data.model.Channel
-        import com.nytv.live.ui.adapter.ChannelAdapter
-        import com.nytv.live.ui.viewmodel.MainViewModel
+    - name: Create Layout Files
+      run: |
+        # activity_main.xml
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="#2c3e50">
+            
+            <EditText
+                android:id="@+id/searchInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="16dp"
+                android:hint="Search channels..."
+                android:layout_margin="16dp" />
+            
+            <TextView
+                android:id="@+id/resultsCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:textColor="#FFFFFF" />
+            
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="8dp" />
+                
+                <ProgressBar
+                    android:id="@+id/loading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:visibility="gone" />
+                
+                <TextView
+                    android:id="@+id/errorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:textColor="#FFFFFF"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
+        EOF
+        
+        # activity_player.xml
+        cat > app/src/main/res/layout/activity_player.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000">
+            
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/playerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+            
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="16dp">
+                
+                <ImageView
+                    android:id="@+id/backButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_back"
+                    android:background="?attr/selectableItemBackground" />
+                
+                <TextView
+                    android:id="@+id/channelTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:textSize="18sp"
+                    android:textColor="#FFFFFF" />
+            </LinearLayout>
+        </FrameLayout>
+        EOF
+        
+        # item_channel.xml
+        cat > app/src/main/res/layout/item_channel.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            app:cardCornerRadius="8dp">
+            
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:gravity="center">
+                
+                <ImageView
+                    android:id="@+id/channelLogo"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:scaleType="centerCrop" />
+                
+                <TextView
+                    android:id="@+id/channelName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+        EOF
+        
+        # activity_splash.xml
+        cat > app/src/main/res/layout/activity_splash.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="#1a1a2e">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="NY TV"
+                android:textSize="48sp"
+                android:textStyle="bold"
+                android:textColor="#DAA520" />
+            
+            <ProgressBar
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp" />
+        </LinearLayout>
+        EOF
 
-        class MainActivity : AppCompatActivity() {
-            private lateinit var viewModel: MainViewModel
-            private lateinit var adapter: ChannelAdapter
-            private lateinit var recyclerView: RecyclerView
-            private lateinit var searchInput: EditText
-            private lateinit var loading: ProgressBar
-            private lateinit var errorText: TextView
-            private lateinit var resultsCount: TextView
-            private lateinit var refreshButton: ImageButton
-            
-            override fun onCreate(savedInstanceState: Bundle?) {
-                super.onCreate(savedInstanceState)
-                setContentView(R.layout.activity_main)
-                
-                viewModel = ViewModelProvider(this)[MainViewModel::class.java]
-                
-                recyclerView = findViewById(R.id.recyclerView)
-                searchInput = findViewById(R.id.searchInput)
-                loading = findViewById(R.id.loading)
-                errorText = findViewById(R.id.errorText)
-                resultsCount = findViewById(R.id.resultsCount)
-                refreshButton = findViewById(R.id.refreshButton)
-                
-                adapter = ChannelAdapter { channel -> playChannel(channel) }
-                recyclerView.layoutManager = GridLayoutManager(this, 2)
-                recyclerView.adapter = adapter
-                
-                val slideIn = AnimationUtils.loadAnimation(this, R.anim.slide_in_right)
-                searchInput.startAnimation(slideIn)
-                
-                searchInput.addTextChangedListener(object : TextWatcher {
-                    override fun afterTextChanged(s: Editable?) {
-                        viewModel.searchChannels(s?.toString() ?: "")
-                    }
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                })
-                
-                refreshButton.setOnClickListener {
-                    it.animate().rotation(360f).setDuration(500).start()
-                    viewModel.loadChannels()
-                }
-                
-                viewModel.filteredChannels.observe(this) { channels ->
-                    adapter.updateChannels(channels)
-                    resultsCount.text = "${channels.size} channels available"
-                    recyclerView.visibility = if (channels.isEmpty()) View.GONE else View.VISIBLE
-                    
-                    if (channels.isEmpty() && viewModel.error.value == null) {
-                        errorText.text = "No channels found"
-                        errorText.visibility = View.VISIBLE
-                    }
-                }
-                
-                viewModel.isLoading.observe(this) { isLoading ->
-                    loading.visibility = if (isLoading) View.VISIBLE else View.GONE
-                }
-                
-                viewModel.error.observe(this) { error ->
-                    if (error != null) {
-                        Snackbar.make(recyclerView, error, Snackbar.LENGTH_LONG)
-                            .setAction("RETRY") { viewModel.loadChannels() }
-                            .show()
-                        errorText.text = error
-                        errorText.visibility = View.VISIBLE
-                    } else {
-                        errorText.visibility = View.GONE
-                    }
-                }
-            }
-            
-            private fun playChannel(channel: Channel) {
-                val intent = Intent(this, PlayerActivity::class.java).apply {
-                    putExtra("CHANNEL", channel)
-                }
-                startActivity(intent)
-                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
-            }
-        }
-        EOF
-        
-        cat > app/src/main/java/com/nytv/live/ui/activity/PlayerActivity.kt << 'EOF'
-        package com.nytv.live.ui.activity
-
-        import android.content.pm.ActivityInfo
-        import android.os.Bundle
-        import android.os.Handler
-        import android.os.Looper
-        import android.view.View
-        import android.view.WindowManager
-        import android.widget.ImageButton
-        import android.widget.ProgressBar
-        import android.widget.TextView
-        import androidx.appcompat.app.AppCompatActivity
-        import androidx.constraintlayout.widget.ConstraintLayout
-        import androidx.media3.common.MediaItem
-        import androidx.media3.common.PlaybackException
-        import androidx.media3.common.Player
-        import androidx.media3.common.util.UnstableApi
-        import androidx.media3.datasource.DefaultHttpDataSource
-        import androidx.media3.exoplayer.ExoPlayer
-        import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-        import androidx.media3.ui.PlayerView
-        import com.google.android.material.snackbar.Snackbar
-        import com.nytv.live.R
-        import com.nytv.live.data.model.Channel
-
-        @UnstableApi
-        class PlayerActivity : AppCompatActivity() {
-            private var player: ExoPlayer? = null
-            private lateinit var playerView: PlayerView
-            private lateinit var controlsOverlay: ConstraintLayout
-            private lateinit var channelTitle: TextView
-            private lateinit var backButton: ImageButton
-            private lateinit var rotateButton: ImageButton
-            private lateinit var loadingIndicator: ProgressBar
-            private lateinit var bufferingIndicator: ProgressBar
-            private var isControlsVisible = true
-            private val hideControlsHandler = Handler(Looper.getMainLooper())
-            private var isLandscape = false
-            
-            override fun onCreate(savedInstanceState: Bundle?) {
-                super.onCreate(savedInstanceState)
-                
-                window.apply {
-                    decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
-                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-                    addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                }
-                
-                setContentView(R.layout.activity_player)
-                
-                playerView = findViewById(R.id.playerView)
-                controlsOverlay = findViewById(R.id.controlsOverlay)
-                channelTitle = findViewById(R.id.channelTitle)
-                backButton = findViewById(R.id.backButton)
-                rotateButton = findViewById(R.id.rotateButton)
-                loadingIndicator = findViewById(R.id.loadingIndicator)
-                bufferingIndicator = findViewById(R.id.bufferingIndicator)
-                
-                val channel = intent.getParcelableExtra<Channel>("CHANNEL")
-                channel?.let {
-                    channelTitle.text = it.name
-                    initializePlayer(it)
-                }
-                
-                setupControls()
-            }
-            
-            private fun setupControls() {
-                backButton.setOnClickListener {
-                    finish()
-                    overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
-                }
-                
-                rotateButton.setOnClickListener {
-                    isLandscape = !isLandscape
-                    requestedOrientation = if (isLandscape) {
-                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    } else {
-                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                    }
-                }
-                
-                playerView.setOnClickListener {
-                    toggleControls()
-                }
-                
-                scheduleHideControls()
-            }
-            
-            private fun toggleControls() {
-                isControlsVisible = !isControlsVisible
-                controlsOverlay.animate()
-                    .alpha(if (isControlsVisible) 1f else 0f)
-                    .setDuration(300)
-                    .withEndAction {
-                        controlsOverlay.visibility = if (isControlsVisible) View.VISIBLE else View.GONE
-                    }
-                    .start()
-                
-                if (isControlsVisible) {
-                    scheduleHideControls()
-                }
-            }
-            
-            private fun scheduleHideControls() {
-                hideControlsHandler.removeCallbacksAndMessages(null)
-                hideControlsHandler.postDelayed({
-                    if (isControlsVisible) {
-                        toggleControls()
-                    }
-                }, 5000)
-            }
-            
-            private fun initializePlayer(channel: Channel) {
-                loadingIndicator.visibility = View.VISIBLE
-                
-                val headers = mutableMapOf(
-                    "Referer" to "https://www.jiotv.com/",
-                    "User-Agent" to "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6"
-                )
-                
-                channel.cookie?.let { cookie ->
-                    headers["Cookie"] = cookie
-                }
-                
-                val dataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setDefaultRequestProperties(headers)
-                    .setConnectTimeoutMs(30000)
-                    .setReadTimeoutMs(30000)
-                
-                player = ExoPlayer.Builder(this)
-                    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-                    .build()
-                    .also { exoPlayer ->
-                        playerView.player = exoPlayer
-                        playerView.useController = false
-                        
-                        exoPlayer.addListener(object : Player.Listener {
-                            override fun onPlaybackStateChanged(state: Int) {
-                                when (state) {
-                                    Player.STATE_BUFFERING -> {
-                                        bufferingIndicator.visibility = View.VISIBLE
-                                    }
-                                    Player.STATE_READY -> {
-                                        loadingIndicator.visibility = View.GONE
-                                        bufferingIndicator.visibility = View.GONE
-                                    }
-                                    Player.STATE_ENDED -> {
-                                        Snackbar.make(playerView, "Playback ended", Snackbar.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                            
-                            override fun onPlayerError(error: PlaybackException) {
-                                loadingIndicator.visibility = View.GONE
-                                bufferingIndicator.visibility = View.GONE
-                                Snackbar.make(
-                                    playerView, 
-                                    "Error: ${error.message ?: "Unable to play stream"}", 
-                                    Snackbar.LENGTH_LONG
-                                ).setAction("RETRY") {
-                                    exoPlayer.prepare()
-                                }.show()
-                            }
-                        })
-                        
-                        val mediaItem = MediaItem.Builder()
-                            .setUri(channel.link)
-                            .build()
-                        
-                        exoPlayer.setMediaItem(mediaItem)
-                        exoPlayer.prepare()
-                        exoPlayer.playWhenReady = true
-                    }
-            }
-            
-            override fun onStart() {
-                super.onStart()
-                player?.play()
-            }
-            
-            override fun onStop() {
-                super.onStop()
-                player?.pause()
-            }
-            
-            override fun onDestroy() {
-                super.onDestroy()
-                hideControlsHandler.removeCallbacksAndMessages(null)
-                player?.release()
-                player = null
-            }
-        }
-        EOF
-        
-        cat > app/src/main/res/anim/slide_in_right.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <set xmlns:android="http://schemas.android.com/apk/res/android">
-            <translate
-                android:fromXDelta="100%"
-                android:toXDelta="0%"
-                android:duration="300" />
-            <alpha
-                android:fromAlpha="0.0"
-                android:toAlpha="1.0"
-                android:duration="300" />
-        </set>
-        EOF
-        
-        cat > app/src/main/res/anim/slide_out_left.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <set xmlns:android="http://schemas.android.com/apk/res/android">
-            <translate
-                android:fromXDelta="0%"
-                android:toXDelta="-100%"
-                android:duration="300" />
-            <alpha
-                android:fromAlpha="1.0"
-                android:toAlpha="0.0"
-                android:duration="300" />
-        </set>
-        EOF
-        
-        cat > app/src/main/res/anim/slide_in_left.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <set xmlns:android="http://schemas.android.com/apk/res/android">
-            <translate
-                android:fromXDelta="-100%"
-                android:toXDelta="0%"
-                android:duration="300" />
-            <alpha
-                android:fromAlpha="0.0"
-                android:toAlpha="1.0"
-                android:duration="300" />
-        </set>
-        EOF
-        
-        cat > app/src/main/res/anim/slide_out_right.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <set xmlns:android="http://schemas.android.com/apk/res/android">
-            <translate
-                android:fromXDelta="0%"
-                android:toXDelta="100%"
-                android:duration="300" />
-            <alpha
-                android:fromAlpha="1.0"
-                android:toAlpha="0.0"
-                android:duration="300" />
-        </set>
-        EOF
-        
-        cat > app/src/main/res/drawable/splash_gradient.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient
-                android:angle="135"
-                android:startColor="#1a1a2e"
-                android:centerColor="#16213e"
-                android:endColor="#0f3460"
-                android:type="linear" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/main_gradient.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient
-                android:angle="135"
-                android:startColor="#2c3e50"
-                android:centerColor="#34495e"
-                android:endColor="#2c3e50"
-                android:type="linear" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/toolbar_gradient.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient
-                android:angle="0"
-                android:startColor="#DAA520"
-                android:centerColor="#FFD700"
-                android:endColor="#DAA520"
-                android:type="linear" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/card_gradient.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient
-                android:angle="135"
-                android:startColor="#3a3a52"
-                android:endColor="#2d2d44"
-                android:type="linear" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/controls_gradient.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <gradient
-                android:angle="90"
-                android:startColor="#CC000000"
-                android:centerColor="#00000000"
-                android:endColor="#CC000000"
-                android:type="linear" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/control_button_background.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <solid android:color="#80000000" />
-            <corners android:radius="24dp" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/live_indicator.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <solid android:color="#80000000" />
-            <corners android:radius="24dp" />
-            <stroke android:width="2dp" android:color="#FF4444" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/live_badge_background.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <solid android:color="#FFFFFF" />
-            <corners android:radius="20dp" />
-        </shape>
-        EOF
-        
-        cat > app/src/main/res/drawable/ic_search.xml << 'EOF'
+    - name: Create Drawable Resources
+      run: |
+        # ic_tv_placeholder.xml
+        cat > app/src/main/res/drawable/ic_tv_placeholder.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <vector xmlns:android="http://schemas.android.com/apk/res/android"
             android:width="24dp"
@@ -1003,98 +761,138 @@ jobs:
             android:viewportWidth="24"
             android:viewportHeight="24">
             <path
-                android:fillColor="#5f6368"
-                android:pathData="M15.5,14h-0.79l-0.28,-0.27C15.41,12.59 16,11.11 16,9.5 16,5.91 13.09,3 9.5,3S3,5.91 3,9.5 5.91,16 9.5,16c1.61,0 3.09,-0.59 4.23,-1.57l0.27,0.28v0.79l5,4.99L20.49,19l-4.99,-5zM9.5,14C7.01,14 5,11.99 5,9.5S7.01,5 9.5,5 14,7.01 14,9.5 11.99,14 9.5,14z"/>
+                android:fillColor="#DAA520"
+                android:pathData="M21,3H3C1.9,3 1,3.9 1,5v14c0,1.1 0.9,2 2,2h18c1.1,0 2,-0.9 2,-2V5C23,3.9 22.1,3 21,3zM21,19H3V5h18V19zM16,11l-7,4V7L16,11z"/>
         </vector>
         EOF
         
+        # ic_back.xml
+        cat > app/src/main/res/drawable/ic_back.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z"/>
+        </vector>
+        EOF
+        
+        # ic_launcher_foreground.xml
+        cat > app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <path
+                android:fillColor="#DAA520"
+                android:pathData="M54,24L54,84L84,54Z"/>
+        </vector>
+        EOF
+
+    - name: Create Mipmap Resources
+      run: |
+        # ic_launcher.xml
+        cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/dark_background"/>
+            <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+        </adaptive-icon>
+        EOF
+        
+        # Create placeholder PNGs
+        touch app/src/main/res/mipmap-mdpi/ic_launcher.png
+        touch app/src/main/res/mipmap-hdpi/ic_launcher.png
+        touch app/src/main/res/mipmap-xhdpi/ic_launcher.png
+        touch app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+        touch app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+    - name: Create Values Resources
+      run: |
+        # strings.xml
         cat > app/src/main/res/values/strings.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
             <string name="app_name">NY TV</string>
-            <string name="search_hint">Search channels...</string>
-            <string name="no_channels">No channels found</string>
-            <string name="loading">Loading channels...</string>
-            <string name="error_loading">Failed to load channels</string>
-            <string name="retry">Retry</string>
         </resources>
         EOF
         
+        # colors.xml
         cat > app/src/main/res/values/colors.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
             <color name="royal_gold">#DAA520</color>
-            <color name="royal_gold_light">#FFD700</color>
-            <color name="royal_gold_dark">#B8860B</color>
             <color name="black">#000000</color>
             <color name="white">#FFFFFF</color>
             <color name="dark_background">#1a1a2e</color>
-            <color name="card_background">#2d2d44</color>
-            <color name="live_red">#FF4444</color>
         </resources>
         EOF
         
+        # themes.xml
         cat > app/src/main/res/values/themes.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
             <style name="Theme.NYTV" parent="Theme.MaterialComponents.DayNight.NoActionBar">
                 <item name="colorPrimary">@color/royal_gold</item>
-                <item name="colorPrimaryDark">@color/royal_gold_dark</item>
-                <item name="colorAccent">@color/royal_gold_light</item>
+                <item name="colorAccent">@color/royal_gold</item>
                 <item name="android:statusBarColor">@color/royal_gold</item>
-                <item name="android:navigationBarColor">@color/black</item>
             </style>
             
             <style name="Theme.NYTV.Splash" parent="Theme.NYTV">
                 <item name="android:windowFullscreen">true</item>
-                <item name="android:windowContentOverlay">@null</item>
-                <item name="android:windowBackground">@drawable/splash_gradient</item>
             </style>
             
             <style name="Theme.NYTV.Fullscreen" parent="Theme.NYTV">
                 <item name="android:windowFullscreen">true</item>
-                <item name="android:windowContentOverlay">@null</item>
                 <item name="android:windowBackground">@color/black</item>
             </style>
         </resources>
         EOF
-        
-        # Create launcher icon placeholder
-        # Download logo if available from GitHub or use placeholder
-        if [ -f "logo.png" ]; then
-          echo "Using logo.png from repository"
-          cp logo.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp logo.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-          cp logo.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp logo.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          cp logo.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-        else
-          echo "Logo not found, using placeholder icons"
-          # Create placeholder icon files
-          touch app/src/main/res/mipmap-mdpi/ic_launcher.png
-          touch app/src/main/res/mipmap-hdpi/ic_launcher.png
-          touch app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          touch app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          touch app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-        fi
 
-    - name: Build with Global Gradle 🛠️
-      # Use the 'gradle' command directly, which is available on GitHub's ubuntu-latest runners.
-      # This completely eliminates the './gradlew: not found' errors.
-      run: **gradle** assembleDebug --stacktrace
+    - name: Validate Gradle Setup
+      run: |
+        echo "Validating Gradle wrapper..."
+        ls -la gradle/wrapper/
+        ls -la gradlew
+        
+    - name: Build Debug APK
+      run: |
+        ./gradlew clean
+        ./gradlew assembleDebug --stacktrace --info
       
-    - name: Upload APK
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: NY-TV-App
+        name: NY-TV-App-Debug
         path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
         
-    - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    - name: Create GitHub Release
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v1.0.${{ github.run_number }}
-        name: NY TV v1.0.${{ github.run_number }}
+        name: NY TV Release v1.0.${{ github.run_number }}
+        body: |
+          ## NY TV Android App
+          
+          **Build:** ${{ github.run_number }}
+          **Commit:** ${{ github.sha }}
+          
+          ### Features
+          - Live TV streaming
+          - Channel search
+          - Modern Material Design UI
+          - ExoPlayer integration
+          
+          ### Installation
+          Download and install the APK file below.
+          
         draft: false
         prerelease: false
         files: app/build/outputs/apk/debug/app-debug.apk
