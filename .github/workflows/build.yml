@@ -1,0 +1,1555 @@
+name: Build NY TV Android App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Create Project Structure
+      run: |
+        # Create directory structure
+        mkdir -p app/src/main/java/com/nytv/live/data/model
+        mkdir -p app/src/main/java/com/nytv/live/data/network
+        mkdir -p app/src/main/java/com/nytv/live/data/repository
+        mkdir -p app/src/main/java/com/nytv/live/ui/activity
+        mkdir -p app/src/main/java/com/nytv/live/ui/adapter
+        mkdir -p app/src/main/java/com/nytv/live/ui/viewmodel
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/src/main/res/drawable-v24
+        mkdir -p app/src/main/res/anim
+        mkdir -p app/src/main/res/mipmap-hdpi
+        mkdir -p app/src/main/res/mipmap-mdpi
+        mkdir -p app/src/main/res/mipmap-xhdpi
+        mkdir -p app/src/main/res/mipmap-xxhdpi
+        mkdir -p app/src/main/res/mipmap-xxxhdpi
+        
+        # Create settings.gradle
+        cat > settings.gradle << 'EOF'
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "NY TV"
+        include ':app'
+        EOF
+        
+        # Create gradle.properties
+        cat > gradle.properties << 'EOF'
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.enableJetifier=true
+        kotlin.code.style=official
+        EOF
+        
+        # Create build.gradle (Project)
+        cat > build.gradle << 'EOF'
+        buildscript {
+            ext.kotlin_version = '1.9.20'
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                classpath 'com.android.tools.build:gradle:8.2.0'
+                classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+            }
+        }
+
+        task clean(type: Delete) {
+            delete rootProject.buildDir
+        }
+        EOF
+        
+        # Create app/build.gradle
+        cat > app/build.gradle << 'EOF'
+        plugins {
+            id 'com.android.application'
+            id 'kotlin-android'
+            id 'kotlin-parcelize'
+        }
+
+        android {
+            namespace 'com.nytv.live'
+            compileSdk 34
+
+            defaultConfig {
+                applicationId "com.nytv.live"
+                minSdk 21
+                targetSdk 34
+                versionCode 1
+                versionName "1.0.0"
+                vectorDrawables.useSupportLibrary = true
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled true
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                }
+            }
+            
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            
+            kotlinOptions {
+                jvmTarget = '17'
+            }
+            
+            buildFeatures {
+                viewBinding true
+            }
+        }
+
+        dependencies {
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+            implementation 'androidx.recyclerview:recyclerview:1.3.2'
+            implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+            implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+            implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+            implementation 'androidx.cardview:cardview:1.0.0'
+            implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+            implementation 'androidx.media3:media3-exoplayer:1.2.1'
+            implementation 'androidx.media3:media3-exoplayer-dash:1.2.1'
+            implementation 'androidx.media3:media3-exoplayer-hls:1.2.1'
+            implementation 'androidx.media3:media3-ui:1.2.1'
+            implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+            implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+            implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+            implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+            implementation 'com.github.bumptech.glide:glide:4.16.0'
+            implementation 'com.google.code.gson:gson:2.10.1'
+        }
+        EOF
+        
+        # Create proguard-rules.pro
+        cat > app/proguard-rules.pro << 'EOF'
+        -keep class com.nytv.live.data.model.** { *; }
+        -keepclassmembers class * {
+            @com.google.gson.annotations.SerializedName <fields>;
+        }
+        -keep class androidx.media3.** { *; }
+        -dontwarn androidx.media3.**
+        EOF
+        
+        # Create AndroidManifest.xml
+        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+            <application
+                android:name=".NYTVApplication"
+                android:allowBackup="true"
+                android:icon="@mipmap/ic_launcher"
+                android:label="@string/app_name"
+                android:theme="@style/Theme.NYTV"
+                android:usesCleartextTraffic="true"
+                android:hardwareAccelerated="true">
+                
+                <activity
+                    android:name=".ui.activity.SplashActivity"
+                    android:exported="true"
+                    android:theme="@style/Theme.NYTV.Splash">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+                
+                <activity
+                    android:name=".ui.activity.MainActivity"
+                    android:exported="false"
+                    android:configChanges="orientation|screenSize" />
+                
+                <activity
+                    android:name=".ui.activity.PlayerActivity"
+                    android:exported="false"
+                    android:configChanges="orientation|screenSize|keyboardHidden"
+                    android:theme="@style/Theme.NYTV.Fullscreen" />
+            </application>
+        </manifest>
+        EOF
+        
+        # Create Application class
+        cat > app/src/main/java/com/nytv/live/NYTVApplication.kt << 'EOF'
+        package com.nytv.live
+
+        import android.app.Application
+
+        class NYTVApplication : Application() {
+            override fun onCreate() {
+                super.onCreate()
+            }
+        }
+        EOF
+        
+        # Create Channel Model
+        cat > app/src/main/java/com/nytv/live/data/model/Channel.kt << 'EOF'
+        package com.nytv.live.data.model
+
+        import android.os.Parcelable
+        import com.google.gson.annotations.SerializedName
+        import kotlinx.parcelize.Parcelize
+
+        @Parcelize
+        data class Channel(
+            @SerializedName("name") val name: String,
+            @SerializedName("logo") val logo: String? = null,
+            @SerializedName("link") val link: String,
+            @SerializedName("cookie") val cookie: String? = null,
+            @SerializedName("drmLicense") val drmLicense: String? = null
+        ) : Parcelable {
+            val drmKeyId: String? get() = drmLicense?.split(":")?.getOrNull(0)
+            val drmKey: String? get() = drmLicense?.split(":")?.getOrNull(1)
+        }
+        EOF
+        
+        # Create API Service
+        cat > app/src/main/java/com/nytv/live/data/network/ApiService.kt << 'EOF'
+        package com.nytv.live.data.network
+
+        import com.nytv.live.data.model.Channel
+        import okhttp3.OkHttpClient
+        import okhttp3.logging.HttpLoggingInterceptor
+        import retrofit2.Response
+        import retrofit2.Retrofit
+        import retrofit2.converter.gson.GsonConverterFactory
+        import retrofit2.http.GET
+        import java.util.concurrent.TimeUnit
+
+        interface ApiService {
+            @GET("Ziotv.json")
+            suspend fun getChannels(): Response<List<Channel>>
+        }
+
+        object ApiClient {
+            private const val BASE_URL = "https://playify.pages.dev/"
+            
+            val apiService: ApiService by lazy {
+                Retrofit.Builder()
+                    .baseUrl(BASE_URL)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .client(
+                        OkHttpClient.Builder()
+                            .addInterceptor(HttpLoggingInterceptor().apply {
+                                level = HttpLoggingInterceptor.Level.BODY
+                            })
+                            .connectTimeout(30, TimeUnit.SECONDS)
+                            .readTimeout(30, TimeUnit.SECONDS)
+                            .build()
+                    )
+                    .build()
+                    .create(ApiService::class.java)
+            }
+        }
+        EOF
+        
+        # Create Repository
+        cat > app/src/main/java/com/nytv/live/data/repository/ChannelRepository.kt << 'EOF'
+        package com.nytv.live.data.repository
+
+        import com.nytv.live.data.model.Channel
+        import com.nytv.live.data.network.ApiClient
+        import kotlinx.coroutines.Dispatchers
+        import kotlinx.coroutines.withContext
+
+        class ChannelRepository {
+            suspend fun getChannels(): Result<List<Channel>> = withContext(Dispatchers.IO) {
+                try {
+                    val response = ApiClient.apiService.getChannels()
+                    if (response.isSuccessful) {
+                        response.body()?.let { Result.success(it) } 
+                            ?: Result.failure(Exception("Empty response"))
+                    } else {
+                        Result.failure(Exception("HTTP ${response.code()}"))
+                    }
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+            }
+        }
+        EOF
+        
+        # Create ViewModel
+        cat > app/src/main/java/com/nytv/live/ui/viewmodel/MainViewModel.kt << 'EOF'
+        package com.nytv.live.ui.viewmodel
+
+        import androidx.lifecycle.LiveData
+        import androidx.lifecycle.MutableLiveData
+        import androidx.lifecycle.ViewModel
+        import androidx.lifecycle.viewModelScope
+        import com.nytv.live.data.model.Channel
+        import com.nytv.live.data.repository.ChannelRepository
+        import kotlinx.coroutines.launch
+
+        class MainViewModel : ViewModel() {
+            private val repository = ChannelRepository()
+            private val _channels = MutableLiveData<List<Channel>>()
+            val channels: LiveData<List<Channel>> = _channels
+            private val _filteredChannels = MutableLiveData<List<Channel>>()
+            val filteredChannels: LiveData<List<Channel>> = _filteredChannels
+            private val _isLoading = MutableLiveData<Boolean>()
+            val isLoading: LiveData<Boolean> = _isLoading
+            private val _error = MutableLiveData<String?>()
+            val error: LiveData<String?> = _error
+            private var allChannels: List<Channel> = emptyList()
+            
+            init { loadChannels() }
+            
+            fun loadChannels() {
+                viewModelScope.launch {
+                    _isLoading.value = true
+                    _error.value = null
+                    repository.getChannels()
+                        .onSuccess { channelList ->
+                            allChannels = channelList
+                            _channels.value = channelList
+                            _filteredChannels.value = channelList
+                        }
+                        .onFailure { exception ->
+                            _error.value = exception.message ?: "Failed to load channels"
+                        }
+                    _isLoading.value = false
+                }
+            }
+            
+            fun searchChannels(query: String) {
+                _filteredChannels.value = if (query.isBlank()) allChannels 
+                    else allChannels.filter { it.name.contains(query, ignoreCase = true) }
+            }
+            
+            fun getChannelCount(): Int = _filteredChannels.value?.size ?: 0
+        }
+        EOF
+        
+        # Create SplashActivity with animations
+        cat > app/src/main/java/com/nytv/live/ui/activity/SplashActivity.kt << 'EOF'
+        package com.nytv.live.ui.activity
+
+        import android.animation.AnimatorSet
+        import android.animation.ObjectAnimator
+        import android.content.Intent
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import android.view.View
+        import android.view.animation.AccelerateDecelerateInterpolator
+        import android.view.animation.BounceInterpolator
+        import android.widget.ImageView
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import com.nytv.live.R
+
+        class SplashActivity : AppCompatActivity() {
+            private val splashDuration = 3000L
+            
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_splash)
+                
+                val logo = findViewById<ImageView>(R.id.splashLogo)
+                val appName = findViewById<TextView>(R.id.appName)
+                val tagline = findViewById<TextView>(R.id.tagline)
+                
+                animateSplashScreen(logo, appName, tagline)
+                
+                Handler(Looper.getMainLooper()).postDelayed({
+                    startActivity(Intent(this, MainActivity::class.java))
+                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                    finish()
+                }, splashDuration)
+            }
+            
+            private fun animateSplashScreen(logo: ImageView, appName: TextView, tagline: TextView) {
+                logo.apply {
+                    alpha = 0f
+                    scaleX = 0.3f
+                    scaleY = 0.3f
+                }
+                appName.apply {
+                    alpha = 0f
+                    translationY = 50f
+                }
+                tagline.apply {
+                    alpha = 0f
+                    translationY = 30f
+                }
+                
+                val logoScaleX = ObjectAnimator.ofFloat(logo, View.SCALE_X, 0.3f, 1.1f, 1f)
+                val logoScaleY = ObjectAnimator.ofFloat(logo, View.SCALE_Y, 0.3f, 1.1f, 1f)
+                val logoAlpha = ObjectAnimator.ofFloat(logo, View.ALPHA, 0f, 1f)
+                
+                val logoAnimSet = AnimatorSet().apply {
+                    playTogether(logoScaleX, logoScaleY, logoAlpha)
+                    duration = 800
+                    interpolator = BounceInterpolator()
+                }
+                
+                val nameAlpha = ObjectAnimator.ofFloat(appName, View.ALPHA, 0f, 1f)
+                val nameTranslation = ObjectAnimator.ofFloat(appName, View.TRANSLATION_Y, 50f, 0f)
+                val nameAnimSet = AnimatorSet().apply {
+                    playTogether(nameAlpha, nameTranslation)
+                    duration = 600
+                    interpolator = AccelerateDecelerateInterpolator()
+                    startDelay = 400
+                }
+                
+                val taglineAlpha = ObjectAnimator.ofFloat(tagline, View.ALPHA, 0f, 1f)
+                val taglineTranslation = ObjectAnimator.ofFloat(tagline, View.TRANSLATION_Y, 30f, 0f)
+                val taglineAnimSet = AnimatorSet().apply {
+                    playTogether(taglineAlpha, taglineTranslation)
+                    duration = 600
+                    interpolator = AccelerateDecelerateInterpolator()
+                    startDelay = 700
+                }
+                
+                val rotateAnim = ObjectAnimator.ofFloat(logo, View.ROTATION, 0f, 360f).apply {
+                    duration = 1000
+                    startDelay = 1200
+                    interpolator = AccelerateDecelerateInterpolator()
+                }
+                
+                AnimatorSet().apply {
+                    playSequentially(logoAnimSet, nameAnimSet, taglineAnimSet, rotateAnim)
+                    start()
+                }
+            }
+        }
+        EOF
+        
+        # Create Adapter
+        cat > app/src/main/java/com/nytv/live/ui/adapter/ChannelAdapter.kt << 'EOF'
+        package com.nytv.live.ui.adapter
+
+        import android.animation.AnimatorSet
+        import android.animation.ObjectAnimator
+        import android.view.LayoutInflater
+        import android.view.View
+        import android.view.ViewGroup
+        import android.view.animation.AccelerateDecelerateInterpolator
+        import android.widget.ImageView
+        import android.widget.TextView
+        import androidx.recyclerview.widget.RecyclerView
+        import com.bumptech.glide.Glide
+        import com.nytv.live.R
+        import com.nytv.live.data.model.Channel
+
+        class ChannelAdapter(
+            private val onChannelClick: (Channel) -> Unit
+        ) : RecyclerView.Adapter<ChannelAdapter.ChannelViewHolder>() {
+            
+            private var channels = listOf<Channel>()
+            
+            fun updateChannels(newChannels: List<Channel>) {
+                channels = newChannels
+                notifyDataSetChanged()
+            }
+            
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChannelViewHolder {
+                val view = LayoutInflater.from(parent.context)
+                    .inflate(R.layout.item_channel, parent, false)
+                return ChannelViewHolder(view)
+            }
+            
+            override fun onBindViewHolder(holder: ChannelViewHolder, position: Int) {
+                holder.bind(channels[position])
+                animateItem(holder.itemView, position)
+            }
+            
+            override fun getItemCount() = channels.size
+            
+            private fun animateItem(view: View, position: Int) {
+                view.alpha = 0f
+                view.translationY = 50f
+                
+                view.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(400)
+                    .setStartDelay((position * 50).toLong())
+                    .setInterpolator(AccelerateDecelerateInterpolator())
+                    .start()
+            }
+            
+            inner class ChannelViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+                private val logo: ImageView = view.findViewById(R.id.channelLogo)
+                private val name: TextView = view.findViewById(R.id.channelName)
+                private val badge: TextView = view.findViewById(R.id.liveBadge)
+                
+                fun bind(channel: Channel) {
+                    name.text = channel.name
+                    Glide.with(itemView.context)
+                        .load(channel.logo)
+                        .placeholder(R.drawable.ic_tv_placeholder)
+                        .into(logo)
+                    
+                    itemView.setOnClickListener {
+                        animateClick()
+                        onChannelClick(channel)
+                    }
+                }
+                
+                private fun animateClick() {
+                    val scaleDown = AnimatorSet().apply {
+                        playTogether(
+                            ObjectAnimator.ofFloat(itemView, View.SCALE_X, 1f, 0.95f),
+                            ObjectAnimator.ofFloat(itemView, View.SCALE_Y, 1f, 0.95f)
+                        )
+                        duration = 100
+                    }
+                    
+                    val scaleUp = AnimatorSet().apply {
+                        playTogether(
+                            ObjectAnimator.ofFloat(itemView, View.SCALE_X, 0.95f, 1f),
+                            ObjectAnimator.ofFloat(itemView, View.SCALE_Y, 0.95f, 1f)
+                        )
+                        duration = 100
+                    }
+                    
+                    AnimatorSet().apply {
+                        playSequentially(scaleDown, scaleUp)
+                        start()
+                    }
+                }
+            }
+        }
+        EOF
+        
+        # Create MainActivity
+        cat > app/src/main/java/com/nytv/live/ui/activity/MainActivity.kt << 'EOF'
+        package com.nytv.live.ui.activity
+
+        import android.content.Intent
+        import android.os.Bundle
+        import android.text.Editable
+        import android.text.TextWatcher
+        import android.view.View
+        import android.view.animation.AnimationUtils
+        import android.widget.EditText
+        import android.widget.ImageButton
+        import android.widget.ProgressBar
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.lifecycle.ViewModelProvider
+        import androidx.recyclerview.widget.GridLayoutManager
+        import androidx.recyclerview.widget.RecyclerView
+        import com.google.android.material.snackbar.Snackbar
+        import com.nytv.live.R
+        import com.nytv.live.data.model.Channel
+        import com.nytv.live.ui.adapter.ChannelAdapter
+        import com.nytv.live.ui.viewmodel.MainViewModel
+
+        class MainActivity : AppCompatActivity() {
+            private lateinit var viewModel: MainViewModel
+            private lateinit var adapter: ChannelAdapter
+            private lateinit var recyclerView: RecyclerView
+            private lateinit var searchInput: EditText
+            private lateinit var loading: ProgressBar
+            private lateinit var errorText: TextView
+            private lateinit var resultsCount: TextView
+            private lateinit var refreshButton: ImageButton
+            
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContentView(R.layout.activity_main)
+                
+                viewModel = ViewModelProvider(this)[MainViewModel::class.java]
+                
+                recyclerView = findViewById(R.id.recyclerView)
+                searchInput = findViewById(R.id.searchInput)
+                loading = findViewById(R.id.loading)
+                errorText = findViewById(R.id.errorText)
+                resultsCount = findViewById(R.id.resultsCount)
+                refreshButton = findViewById(R.id.refreshButton)
+                
+                adapter = ChannelAdapter { channel -> playChannel(channel) }
+                recyclerView.layoutManager = GridLayoutManager(this, 2)
+                recyclerView.adapter = adapter
+                
+                val slideIn = AnimationUtils.loadAnimation(this, R.anim.slide_in_right)
+                searchInput.startAnimation(slideIn)
+                
+                searchInput.addTextChangedListener(object : TextWatcher {
+                    override fun afterTextChanged(s: Editable?) {
+                        viewModel.searchChannels(s?.toString() ?: "")
+                    }
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
+                
+                refreshButton.setOnClickListener {
+                    it.animate().rotation(360f).setDuration(500).start()
+                    viewModel.loadChannels()
+                }
+                
+                viewModel.filteredChannels.observe(this) { channels ->
+                    adapter.updateChannels(channels)
+                    resultsCount.text = "${channels.size} channels available"
+                    recyclerView.visibility = if (channels.isEmpty()) View.GONE else View.VISIBLE
+                    
+                    if (channels.isEmpty() && viewModel.error.value == null) {
+                        errorText.text = "No channels found"
+                        errorText.visibility = View.VISIBLE
+                    }
+                }
+                
+                viewModel.isLoading.observe(this) { isLoading ->
+                    loading.visibility = if (isLoading) View.VISIBLE else View.GONE
+                }
+                
+                viewModel.error.observe(this) { error ->
+                    if (error != null) {
+                        Snackbar.make(recyclerView, error, Snackbar.LENGTH_LONG)
+                            .setAction("RETRY") { viewModel.loadChannels() }
+                            .show()
+                        errorText.text = error
+                        errorText.visibility = View.VISIBLE
+                    } else {
+                        errorText.visibility = View.GONE
+                    }
+                }
+            }
+            
+            private fun playChannel(channel: Channel) {
+                val intent = Intent(this, PlayerActivity::class.java).apply {
+                    putExtra("CHANNEL", channel)
+                }
+                startActivity(intent)
+                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            }
+        }
+        EOF
+        
+        # Create Enhanced PlayerActivity
+        cat > app/src/main/java/com/nytv/live/ui/activity/PlayerActivity.kt << 'EOF'
+        package com.nytv.live.ui.activity
+
+        import android.content.pm.ActivityInfo
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import android.view.View
+        import android.view.WindowManager
+        import android.widget.ImageButton
+        import android.widget.ProgressBar
+        import android.widget.TextView
+        import androidx.appcompat.app.AppCompatActivity
+        import androidx.constraintlayout.widget.ConstraintLayout
+        import androidx.media3.common.MediaItem
+        import androidx.media3.common.PlaybackException
+        import androidx.media3.common.Player
+        import androidx.media3.common.util.UnstableApi
+        import androidx.media3.datasource.DefaultHttpDataSource
+        import androidx.media3.exoplayer.ExoPlayer
+        import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+        import androidx.media3.ui.PlayerView
+        import com.google.android.material.snackbar.Snackbar
+        import com.nytv.live.R
+        import com.nytv.live.data.model.Channel
+
+        @UnstableApi
+        class PlayerActivity : AppCompatActivity() {
+            private var player: ExoPlayer? = null
+            private lateinit var playerView: PlayerView
+            private lateinit var controlsOverlay: ConstraintLayout
+            private lateinit var channelTitle: TextView
+            private lateinit var backButton: ImageButton
+            private lateinit var rotateButton: ImageButton
+            private lateinit var loadingIndicator: ProgressBar
+            private lateinit var bufferingIndicator: ProgressBar
+            private var isControlsVisible = true
+            private val hideControlsHandler = Handler(Looper.getMainLooper())
+            private var isLandscape = false
+            
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                
+                window.apply {
+                    decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
+                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                    addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                
+                setContentView(R.layout.activity_player)
+                
+                playerView = findViewById(R.id.playerView)
+                controlsOverlay = findViewById(R.id.controlsOverlay)
+                channelTitle = findViewById(R.id.channelTitle)
+                backButton = findViewById(R.id.backButton)
+                rotateButton = findViewById(R.id.rotateButton)
+                loadingIndicator = findViewById(R.id.loadingIndicator)
+                bufferingIndicator = findViewById(R.id.bufferingIndicator)
+                
+                val channel = intent.getParcelableExtra<Channel>("CHANNEL")
+                channel?.let {
+                    channelTitle.text = it.name
+                    initializePlayer(it)
+                }
+                
+                setupControls()
+            }
+            
+            private fun setupControls() {
+                backButton.setOnClickListener {
+                    finish()
+                    overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
+                }
+                
+                rotateButton.setOnClickListener {
+                    isLandscape = !isLandscape
+                    requestedOrientation = if (isLandscape) {
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                }
+                
+                playerView.setOnClickListener {
+                    toggleControls()
+                }
+                
+                scheduleHideControls()
+            }
+            
+            private fun toggleControls() {
+                isControlsVisible = !isControlsVisible
+                controlsOverlay.animate()
+                    .alpha(if (isControlsVisible) 1f else 0f)
+                    .setDuration(300)
+                    .withEndAction {
+                        controlsOverlay.visibility = if (isControlsVisible) View.VISIBLE else View.GONE
+                    }
+                    .start()
+                
+                if (isControlsVisible) {
+                    scheduleHideControls()
+                }
+            }
+            
+            private fun scheduleHideControls() {
+                hideControlsHandler.removeCallbacksAndMessages(null)
+                hideControlsHandler.postDelayed({
+                    if (isControlsVisible) {
+                        toggleControls()
+                    }
+                }, 5000)
+            }
+            
+            private fun initializePlayer(channel: Channel) {
+                loadingIndicator.visibility = View.VISIBLE
+                
+                val headers = mutableMapOf(
+                    "Referer" to "https://www.jiotv.com/",
+                    "User-Agent" to "plaYtv/7.1.5 (Linux;Android 13) ExoPlayerLib/2.11.6"
+                )
+                
+                channel.cookie?.let { cookie ->
+                    headers["Cookie"] = cookie
+                }
+                
+                val dataSourceFactory = DefaultHttpDataSource.Factory()
+                    .setDefaultRequestProperties(headers)
+                    .setConnectTimeoutMs(30000)
+                    .setReadTimeoutMs(30000)
+                
+                player = ExoPlayer.Builder(this)
+                    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+                    .build()
+                    .also { exoPlayer ->
+                        playerView.player = exoPlayer
+                        playerView.useController = false
+                        
+                        exoPlayer.addListener(object : Player.Listener {
+                            override fun onPlaybackStateChanged(state: Int) {
+                                when (state) {
+                                    Player.STATE_BUFFERING -> {
+                                        bufferingIndicator.visibility = View.VISIBLE
+                                    }
+                                    Player.STATE_READY -> {
+                                        loadingIndicator.visibility = View.GONE
+                                        bufferingIndicator.visibility = View.GONE
+                                    }
+                                    Player.STATE_ENDED -> {
+                                        Snackbar.make(playerView, "Playback ended", Snackbar.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            
+                            override fun onPlayerError(error: PlaybackException) {
+                                loadingIndicator.visibility = View.GONE
+                                bufferingIndicator.visibility = View.GONE
+                                Snackbar.make(
+                                    playerView, 
+                                    "Error: ${error.message ?: "Unable to play stream"}", 
+                                    Snackbar.LENGTH_LONG
+                                ).setAction("RETRY") {
+                                    exoPlayer.prepare()
+                                }.show()
+                            }
+                        })
+                        
+                        val mediaItem = MediaItem.Builder()
+                            .setUri(channel.link)
+                            .build()
+                        
+                        exoPlayer.setMediaItem(mediaItem)
+                        exoPlayer.prepare()
+                        exoPlayer.playWhenReady = true
+                    }
+            }
+            
+            override fun onStart() {
+                super.onStart()
+                player?.play()
+            }
+            
+            override fun onStop() {
+                super.onStop()
+                player?.pause()
+            }
+            
+            override fun onDestroy() {
+                super.onDestroy()
+                hideControlsHandler.removeCallbacksAndMessages(null)
+                player?.release()
+                player = null
+            }
+        }
+        EOF
+        
+        # Create Splash Layout
+        cat > app/src/main/res/layout/activity_splash.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <androidx.constraintlayout.widget.ConstraintLayout 
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/splash_gradient">
+            
+            <ImageView
+                android:id="@+id/splashLogo"
+                android:layout_width="180dp"
+                android:layout_height="180dp"
+                android:src="@drawable/ic_launcher_foreground"
+                android:scaleType="fitCenter"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintVertical_bias="0.4" />
+            
+            <TextView
+                android:id="@+id/appName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="NY TV"
+                android:textSize="42sp"
+                android:textStyle="bold"
+                android:textColor="@color/royal_gold"
+                android:fontFamily="sans-serif-black"
+                android:layout_marginTop="24dp"
+                app:layout_constraintTop_toBottomOf="@id/splashLogo"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+            
+            <TextView
+                android:id="@+id/tagline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Premium Live Streaming"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF"
+                android:alpha="0.9"
+                android:layout_marginTop="8dp"
+                app:layout_constraintTop_toBottomOf="@id/appName"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+            
+            <ProgressBar
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:indeterminateTint="@color/royal_gold"
+                android:layout_marginBottom="48dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+            
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        EOF
+        
+        # Create MainActivity Layout
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:background="@drawable/main_gradient">
+            
+            <com.google.android.material.appbar.AppBarLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:elevation="8dp">
+                
+                <androidx.appcompat.widget.Toolbar
+                    android:id="@+id/toolbar"
+                    android:layout_width="match_parent"
+                    android:layout_height="?attr/actionBarSize"
+                    android:background="@drawable/toolbar_gradient">
+                    
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_tv_placeholder"
+                            android:layout_marginEnd="12dp" />
+                        
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="NY TV Live"
+                            android:textSize="22sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/white" />
+                        
+                        <ImageButton
+                            android:id="@+id/refreshButton"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:src="@drawable/ic_refresh"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:layout_marginEnd="8dp" />
+                    </LinearLayout>
+                </androidx.appcompat.widget.Toolbar>
+            </com.google.android.material.appbar.AppBarLayout>
+            
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="16dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="6dp">
+                
+                <EditText
+                    android:id="@+id/searchInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="16dp"
+                    android:hint="🔍 Search channels..."
+                    android:textSize="16sp"
+                    android:background="@android:color/transparent"
+                    android:inputType="text"
+                    android:imeOptions="actionSearch"
+                    android:maxLines="1" />
+            </androidx.cardview.widget.CardView>
+            
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:gravity="center_vertical">
+                
+                <TextView
+                    android:id="@+id/resultsCount"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Loading..."
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:alpha="0.9" />
+            </LinearLayout>
+            
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="8dp"
+                    android:clipToPadding="false" />
+                
+                <ProgressBar
+                    android:id="@+id/loading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:indeterminateTint="@color/royal_gold"
+                    android:visibility="gone" />
+                
+                <TextView
+                    android:id="@+id/errorText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:padding="24dp"
+                    android:textAlignment="center"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
+        EOF
+        
+        # Create Enhanced Player Layout
+        cat > app/src/main/res/layout/activity_player.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000">
+            
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/playerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:keepScreenOn="true"
+                app:show_buffering="when_playing"
+                app:use_controller="false" />
+            
+            <ProgressBar
+                android:id="@+id/loadingIndicator"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/royal_gold"
+                android:visibility="gone" />
+            
+            <ProgressBar
+                android:id="@+id/bufferingIndicator"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/royal_gold"
+                android:visibility="gone" />
+            
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/controlsOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/controls_gradient">
+                
+                <LinearLayout
+                    android:id="@+id/topControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="16dp"
+                    android:gravity="center_vertical"
+                    app:layout_constraintTop_toTopOf="parent">
+                    
+                    <ImageButton
+                        android:id="@+id/backButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_back"
+                        android:background="@drawable/control_button_background"
+                        android:tint="@color/white" />
+                    
+                    <TextView
+                        android:id="@+id/channelTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="16dp"
+                        android:text="Channel Name"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/white"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                    
+                    <ImageButton
+                        android:id="@+id/rotateButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_rotate"
+                        android:background="@drawable/control_button_background"
+                        android:tint="@color/white" />
+                </LinearLayout>
+                
+                <LinearLayout
+                    android:id="@+id/centerControls"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent">
+                    
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔴 LIVE"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/white"
+                        android:background="@drawable/live_indicator"
+                        android:paddingStart="24dp"
+                        android:paddingEnd="24dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp" />
+                </LinearLayout>
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </FrameLayout>
+        EOF
+        
+        # Create Channel Item Layout with enhanced design
+        cat > app/src/main/res/layout/item_channel.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            android:foreground="?attr/selectableItemBackground">
+            
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/card_gradient"
+                android:padding="16dp"
+                android:gravity="center">
+                
+                <androidx.cardview.widget.CardView
+                    android:layout_width="90dp"
+                    android:layout_height="90dp"
+                    app:cardCornerRadius="45dp"
+                    app:cardElevation="4dp"
+                    android:layout_marginBottom="12dp">
+                    
+                    <ImageView
+                        android:id="@+id/channelLogo"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="centerCrop"
+                        android:background="@color/white" />
+                </androidx.cardview.widget.CardView>
+                
+                <TextView
+                    android:id="@+id/channelName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:textAlignment="center"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
+                
+                <TextView
+                    android:id="@+id/liveBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="● LIVE"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:textColor="#FF4444"
+                    android:background="@drawable/live_badge_background"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:paddingTop="5dp"
+                    android:paddingBottom="5dp" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+        EOF
+        
+        # Create Animation Resources
+        cat > app/src/main/res/anim/slide_in_right.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <set xmlns:android="http://schemas.android.com/apk/res/android">
+            <translate
+                android:fromXDelta="100%"
+                android:toXDelta="0%"
+                android:duration="300" />
+            <alpha
+                android:fromAlpha="0.0"
+                android:toAlpha="1.0"
+                android:duration="300" />
+        </set>
+        EOF
+        
+        cat > app/src/main/res/anim/slide_out_left.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <set xmlns:android="http://schemas.android.com/apk/res/android">
+            <translate
+                android:fromXDelta="0%"
+                android:toXDelta="-100%"
+                android:duration="300" />
+            <alpha
+                android:fromAlpha="1.0"
+                android:toAlpha="0.0"
+                android:duration="300" />
+        </set>
+        EOF
+        
+        cat > app/src/main/res/anim/slide_in_left.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <set xmlns:android="http://schemas.android.com/apk/res/android">
+            <translate
+                android:fromXDelta="-100%"
+                android:toXDelta="0%"
+                android:duration="300" />
+            <alpha
+                android:fromAlpha="0.0"
+                android:toAlpha="1.0"
+                android:duration="300" />
+        </set>
+        EOF
+        
+        cat > app/src/main/res/anim/slide_out_right.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <set xmlns:android="http://schemas.android.com/apk/res/android">
+            <translate
+                android:fromXDelta="0%"
+                android:toXDelta="100%"
+                android:duration="300" />
+            <alpha
+                android:fromAlpha="1.0"
+                android:toAlpha="0.0"
+                android:duration="300" />
+        </set>
+        EOF
+        
+        # Create Drawable Resources
+        cat > app/src/main/res/drawable/splash_gradient.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient
+                android:angle="135"
+                android:startColor="#1a1a2e"
+                android:centerColor="#16213e"
+                android:endColor="#0f3460"
+                android:type="linear" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/main_gradient.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient
+                android:angle="135"
+                android:startColor="#2c3e50"
+                android:centerColor="#34495e"
+                android:endColor="#2c3e50"
+                android:type="linear" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/toolbar_gradient.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient
+                android:angle="0"
+                android:startColor="#DAA520"
+                android:centerColor="#FFD700"
+                android:endColor="#DAA520"
+                android:type="linear" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/card_gradient.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient
+                android:angle="135"
+                android:startColor="#3a3a52"
+                android:endColor="#2d2d44"
+                android:type="linear" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/controls_gradient.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <gradient
+                android:angle="90"
+                android:startColor="#CC000000"
+                android:centerColor="#00000000"
+                android:endColor="#CC000000"
+                android:type="linear" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/control_button_background.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <solid android:color="#80000000" />
+            <corners android:radius="24dp" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/live_indicator.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <solid android:color="#80000000" />
+            <corners android:radius="24dp" />
+            <stroke android:width="2dp" android:color="#FF4444" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/live_badge_background.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <solid android:color="#FFFFFF" />
+            <corners android:radius="20dp" />
+        </shape>
+        EOF
+        
+        cat > app/src/main/res/drawable/ic_tv_placeholder.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="@color/royal_gold"
+                android:pathData="M21,3H3C1.9,3 1,3.9 1,5v14c0,1.1 0.9,2 2,2h18c1.1,0 2,-0.9 2,-2V5C23,3.9 22.1,3 21,3zM21,19H3V5h18V19zM16,11l-7,4V7L16,11z"/>
+        </vector>
+        EOF
+        
+        cat > app/src/main/res/drawable/ic_search.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#5f6368"
+                android:pathData="M15.5,14h-0.79l-0.28,-0.27C15.41,12.59 16,11.11 16,9.5 16,5.91 13.09,3 9.5,3S3,5.91 3,9.5 5.91,16 9.5,16c1.61,0 3.09,-0.59 4.23,-1.57l0.27,0.28v0.79l5,4.99L20.49,19l-4.99,-5zM9.5,14C7.01,14 5,11.99 5,9.5S7.01,5 9.5,5 14,7.01 14,9.5 11.99,14 9.5,14z"/>
+        </vector>
+        EOF
+        
+        cat > app/src/main/res/drawable/ic_back.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z"/>
+        </vector>
+        EOF
+        
+        cat > app/src/main/res/drawable/ic_rotate.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M16.48,2.52c3.27,1.55 5.61,4.72 5.97,8.48h1.5C23.44,4.84 18.29,0 12,0l-0.66,0.03 3.81,3.81 1.33,-1.32zM10.23,1.75c-0.59,-0.59 -1.54,-0.59 -2.12,0L1.75,8.11c-0.59,0.59 -0.59,1.54 0,2.12l12.02,12.02c0.59,0.59 1.54,0.59 2.12,0l6.36,-6.36c0.59,-0.59 0.59,-1.54 0,-2.12L10.23,1.75zM14.83,21.19L2.81,9.17l6.36,-6.36 12.02,12.02 -6.36,6.36z"/>
+        </vector>
+        EOF
+        
+        cat > app/src/main/res/drawable/ic_refresh.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M17.65,6.35C16.2,4.9 14.21,4 12,4c-4.42,0 -7.99,3.58 -7.99,8s3.57,8 7.99,8c3.73,0 6.84,-2.55 7.73,-6h-2.08c-0.82,2.33 -3.04,4 -5.65,4 -3.31,0 -6,-2.69 -6,-6s2.69,-6 6,-6c1.66,0 3.14,0.69 4.22,1.78L13,11h7V4l-2.35,2.35z"/>
+        </vector>
+        EOF
+        
+        # Create values
+        cat > app/src/main/res/values/strings.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <string name="app_name">NY TV</string>
+            <string name="search_hint">Search channels...</string>
+            <string name="no_channels">No channels found</string>
+            <string name="loading">Loading channels...</string>
+            <string name="error_loading">Failed to load channels</string>
+            <string name="retry">Retry</string>
+        </resources>
+        EOF
+        
+        cat > app/src/main/res/values/colors.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <color name="royal_gold">#DAA520</color>
+            <color name="royal_gold_light">#FFD700</color>
+            <color name="royal_gold_dark">#B8860B</color>
+            <color name="black">#000000</color>
+            <color name="white">#FFFFFF</color>
+            <color name="dark_background">#1a1a2e</color>
+            <color name="card_background">#2d2d44</color>
+            <color name="live_red">#FF4444</color>
+        </resources>
+        EOF
+        
+        cat > app/src/main/res/values/themes.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <style name="Theme.NYTV" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+                <item name="colorPrimary">@color/royal_gold</item>
+                <item name="colorPrimaryDark">@color/royal_gold_dark</item>
+                <item name="colorAccent">@color/royal_gold_light</item>
+                <item name="android:statusBarColor">@color/royal_gold</item>
+                <item name="android:navigationBarColor">@color/black</item>
+            </style>
+            
+            <style name="Theme.NYTV.Splash" parent="Theme.NYTV">
+                <item name="android:windowFullscreen">true</item>
+                <item name="android:windowContentOverlay">@null</item>
+                <item name="android:windowBackground">@drawable/splash_gradient</item>
+            </style>
+            
+            <style name="Theme.NYTV.Fullscreen" parent="Theme.NYTV">
+                <item name="android:windowFullscreen">true</item>
+                <item name="android:windowContentOverlay">@null</item>
+                <item name="android:windowBackground">@color/black</item>
+            </style>
+        </resources>
+        EOF
+        
+        # Create launcher icon placeholder
+        cat > app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <group
+                android:translateX="22"
+                android:translateY="22">
+                <path
+                    android:fillColor="@color/royal_gold"
+                    android:pathData="M54,10.5c-13.25,0-24,10.75-24,24v15c0,1.66,1.34,3,3,3h42c1.66,0,3-1.34,3-3v-15C78,21.25,67.25,10.5,54,10.5zM72,46.5H36v-12c0-9.94,8.06-18,18-18s18,8.06,18,18V46.5z"/>
+                <path
+                    android:fillColor="@color/royal_gold"
+                    android:pathData="M66,27c0-6.63-5.37-12-12-12s-12,5.37-12,12v7.5h24V27zM54,19.5c2.76,0,5,2.24,5,5v4.5h-10V24.5C49,21.74,51.24,19.5,54,19.5z"/>
+                <circle
+                    android:fillColor="@color/royal_gold_light"
+                    android:cx="54"
+                    android:cy="34.5"
+                    android:radius="3"/>
+            </group>
+        </vector>
+        EOF
+        
+        # Create mipmap icons using the logo from repository
+        echo "Creating launcher icons..."
+        
+        # Download logo if available from GitHub or use placeholder
+        if [ -f "logo.png" ]; then
+          echo "Using logo.png from repository"
+          cp logo.png app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp logo.png app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp logo.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp logo.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp logo.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        else
+          echo "Logo not found, using placeholder icons"
+          # Create placeholder icon files
+          touch app/src/main/res/mipmap-mdpi/ic_launcher.png
+          touch app/src/main/res/mipmap-hdpi/ic_launcher.png
+          touch app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          touch app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          touch app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        fi
+        
+        # Create adaptive icon XML
+        cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/dark_background"/>
+            <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+        </adaptive-icon>
+        EOF
+        
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug --stacktrace
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: NY-TV-App
+        path: app/build/outputs/apk/debug/app-debug.apk
+        
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: NY TV v1.0.${{ github.run_number }}
+        draft: false
+        prerelease: false
+        files: app/build/outputs/apk/debug/app-debug.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
