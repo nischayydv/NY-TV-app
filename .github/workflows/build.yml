@@ -1561,7 +1561,7 @@ jobs:
     - name: Grant execute permission for gradlew 
       run: chmod +x gradlew
       
-    - name: Download Gradle Wrapper JAR (Fixes 'gradle-wrapper.jar: not found')
+    - name: Download Gradle Wrapper JAR 
       run: ./gradlew help
       # NOTE: The first run fails but downloads the wrapper JAR to fix the subsequent 'not found' error.
       # Adding a simple task like 'help' or 'wrapper' forces the download.
