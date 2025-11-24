@@ -24,6 +24,26 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    - name: Configure Gradle Wrapper and Project Directories
+      run: |
+        # 1. FIX: Set the stable Gradle version (8.7 is compatible with Kotlin 1.9.20)
+        mkdir -p gradle/wrapper
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+        distributionPath=wrapper/dists
+        zipStorePath=wrapper/dists
+        zipStoreBase=GRADLE_USER_HOME
+        EOF
+        
+        # 2. FIX (Previous issue): Ensure the Adaptive Icon directory is created
+        mkdir -p app/src/main/res/mipmap-anydpi-v26
+        
+        # ... Include ALL your other 'mkdir -p' commands here ...
+        mkdir -p app/src/main/java/com/nytv/live/data/model
+        # ... etc ...
+
+
     - name: Create Project Structure
       run: |
         # Create directory structure
