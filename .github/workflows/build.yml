@@ -18,15 +18,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup JDK
+    - name: Setup JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Configure Directories and Gradle Wrapper Version 🎯 (Fixes all 'No such file or directory' errors)
+    - name: Configure Gradle Wrapper, Build Files, and Project Structure
       run: |
-        # 1. FIX: Set the stable Gradle version (8.7) to fix Kotlin incompatibility
+        # 1. FIX: Set the stable Gradle version (8.7 is compatible with KGP 1.9.20 and AGP 8.2.0)
+        # This overrides any default wrapper version the environment might have.
         mkdir -p gradle/wrapper
         cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
         distributionBase=GRADLE_USER_HOME
@@ -36,7 +37,7 @@ jobs:
         zipStoreBase=GRADLE_USER_HOME
         EOF
         
-        # 2. Create ALL necessary project directories (Fixes old mkdir-related errors)
+        # 2. Create ALL necessary directory structure (Consolidated)
         mkdir -p app/src/main/java/com/nytv/live/data/model
         mkdir -p app/src/main/java/com/nytv/live/data/network
         mkdir -p app/src/main/java/com/nytv/live/data/repository
@@ -48,17 +49,13 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/drawable-v24
         mkdir -p app/src/main/res/anim
-        mkdir -p app/src/main/res/mipmap-anydpi-v26 # Adaptive Icon Fix
+        # FIX for adaptive icons, ensures directory exists
+        mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/res/mipmap-hdpi
         mkdir -p app/src/main/res/mipmap-mdpi
         mkdir -p app/src/main/res/mipmap-xhdpi
         mkdir -p app/src/main/res/mipmap-xxhdpi
         mkdir -p app/src/main/res/mipmap-xxxhdpi
-
-
-    - name: Create Project Files (Source Code, Layouts, Config)
-      run: |
-        # NOTE: All 'mkdir -p' commands have been moved to the previous step.
         
         # Create settings.gradle
         cat > settings.gradle << 'EOF'
@@ -97,11 +94,19 @@ jobs:
                 mavenCentral()
             }
             dependencies {
-                classpath 'com.android.tools.build:gradle:8.2.0'
+                # Ensure compatible AGP version for Gradle 8.x
+                classpath 'com.android.tools.build:gradle:8.2.0' 
                 classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
             }
         }
 
+        allprojects {
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        
         task clean(type: Delete) {
             delete rootProject.buildDir
         }
@@ -111,7 +116,7 @@ jobs:
         cat > app/build.gradle << 'EOF'
         plugins {
             id 'com.android.application'
-            id 'kotlin-android'
+            id 'org.jetbrains.kotlin.android' # Use the modern plugin ID
             id 'kotlin-parcelize'
         }
 
@@ -150,20 +155,27 @@ jobs:
         }
 
         dependencies {
+            # Core and UI
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.11.0'
             implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
             implementation 'androidx.recyclerview:recyclerview:1.3.2'
+            implementation 'androidx.cardview:cardview:1.0.0'
+
+            # Architecture Components & Coroutines
             implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
             implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
             implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
-            implementation 'androidx.cardview:cardview:1.0.0'
             implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+            # Media (ExoPlayer/Media3)
             implementation 'androidx.media3:media3-exoplayer:1.2.1'
             implementation 'androidx.media3:media3-exoplayer-dash:1.2.1'
             implementation 'androidx.media3:media3-exoplayer-hls:1.2.1'
             implementation 'androidx.media3:media3-ui:1.2.1'
+
+            # Networking (Retrofit/OkHttp/Glide/Gson)
             implementation 'com.squareup.retrofit2:retrofit:2.9.0'
             implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
             implementation 'com.squareup.okhttp3:okhttp:4.12.0'
@@ -1531,7 +1543,8 @@ jobs:
           cp logo.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
         else
           echo "Logo not found, using placeholder icons"
-          # Create placeholder icon files
+          # Create placeholder icon files (These will be empty files, the foreground/background XML will be used)
+          # NOTE: In a real app, you would generate real PNGs here.
           touch app/src/main/res/mipmap-mdpi/ic_launcher.png
           touch app/src/main/res/mipmap-hdpi/ic_launcher.png
           touch app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -1548,12 +1561,8 @@ jobs:
         </adaptive-icon>
         EOF
 
-    - name: Initialize Gradle Wrapper (Creates gradlew) 🚀
-      # This MUST run after the configuration files (settings.gradle, build.gradle) are created
-      run: gradle wrapper
         
     - name: Grant execute permission for gradlew
-      # This MUST run after the wrapper is initialized
       run: chmod +x gradlew
       
     - name: Build with Gradle
