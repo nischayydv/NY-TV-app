@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Added GITHUB_TOKEN to secrets for permissions (good practice for releases)
     permissions:
       contents: write
     
@@ -18,16 +19,29 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup JDK 17
+    - name: Setup JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
+        # Using Java 17, compatible with AGP 8.x
         java-version: '17'
 
-    - name: Configure Gradle Wrapper, Build Files, and Project Structure
+    # 1. FIX: Manually create gradlew and Gradle Wrapper properties
+    - name: Configure Gradle Wrapper
       run: |
-        # 1. FIX: Set the stable Gradle version (8.7 is compatible with KGP 1.9.20 and AGP 8.2.0)
-        # This overrides any default wrapper version the environment might have.
+        # FIX for "cannot access 'gradlew': No such file or directory"
+        # Manually create the gradlew script
+        cat > gradlew << 'EOF'
+        #!/usr/bin/env sh
+        
+        # Determine the directory of the script
+        DIR=$(cd "$(dirname "$0")" && pwd)
+        
+        # Execute the wrapper jar
+        "$DIR/gradle/wrapper/gradle-wrapper.jar" "$@"
+        EOF
+        
+        # Set stable Gradle version (8.7 is compatible with Kotlin 1.9.20 and AGP 8.2.0)
         mkdir -p gradle/wrapper
         cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
         distributionBase=GRADLE_USER_HOME
@@ -37,7 +51,12 @@ jobs:
         zipStoreBase=GRADLE_USER_HOME
         EOF
         
-        # 2. Create ALL necessary directory structure (Consolidated)
+        # Ensure the minimal gradlew file is executable immediately
+        chmod +x gradlew
+
+    - name: Create Project Structure and Files
+      run: |
+        # Create directory structure
         mkdir -p app/src/main/java/com/nytv/live/data/model
         mkdir -p app/src/main/java/com/nytv/live/data/network
         mkdir -p app/src/main/java/com/nytv/live/data/repository
@@ -49,7 +68,7 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/drawable-v24
         mkdir -p app/src/main/res/anim
-        # FIX for adaptive icons, ensures directory exists
+        # Ensure Adaptive Icon directory is created
         mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/res/mipmap-hdpi
         mkdir -p app/src/main/res/mipmap-mdpi
@@ -88,25 +107,17 @@ jobs:
         # Create build.gradle (Project)
         cat > build.gradle << 'EOF'
         buildscript {
-            ext.kotlin_version = '1.9.20'
+            ext.kotlin_version = '1.9.20' # KGP 1.9.20 is compatible with AGP 8.2.0
             repositories {
                 google()
                 mavenCentral()
             }
             dependencies {
-                # Ensure compatible AGP version for Gradle 8.x
-                classpath 'com.android.tools.build:gradle:8.2.0' 
+                classpath 'com.android.tools.build:gradle:8.2.0' # AGP 8.2.0 is compatible with Gradle 8.x
                 classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
             }
         }
 
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        
         task clean(type: Delete) {
             delete rootProject.buildDir
         }
@@ -116,7 +127,7 @@ jobs:
         cat > app/build.gradle << 'EOF'
         plugins {
             id 'com.android.application'
-            id 'org.jetbrains.kotlin.android' # Use the modern plugin ID
+            id 'kotlin-android'
             id 'kotlin-parcelize'
         }
 
@@ -155,27 +166,20 @@ jobs:
         }
 
         dependencies {
-            # Core and UI
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.11.0'
             implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
             implementation 'androidx.recyclerview:recyclerview:1.3.2'
-            implementation 'androidx.cardview:cardview:1.0.0'
-
-            # Architecture Components & Coroutines
             implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
             implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
             implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+            implementation 'androidx.cardview:cardview:1.0.0'
             implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-
-            # Media (ExoPlayer/Media3)
             implementation 'androidx.media3:media3-exoplayer:1.2.1'
             implementation 'androidx.media3:media3-exoplayer-dash:1.2.1'
             implementation 'androidx.media3:media3-exoplayer-hls:1.2.1'
             implementation 'androidx.media3:media3-ui:1.2.1'
-
-            # Networking (Retrofit/OkHttp/Glide/Gson)
             implementation 'com.squareup.retrofit2:retrofit:2.9.0'
             implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
             implementation 'com.squareup.okhttp3:okhttp:4.12.0'
@@ -1543,8 +1547,7 @@ jobs:
           cp logo.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
         else
           echo "Logo not found, using placeholder icons"
-          # Create placeholder icon files (These will be empty files, the foreground/background XML will be used)
-          # NOTE: In a real app, you would generate real PNGs here.
+          # Create placeholder icon files
           touch app/src/main/res/mipmap-mdpi/ic_launcher.png
           touch app/src/main/res/mipmap-hdpi/ic_launcher.png
           touch app/src/main/res/mipmap-xhdpi/ic_launcher.png
@@ -1561,11 +1564,13 @@ jobs:
         </adaptive-icon>
         EOF
 
-        
+    # 2. FIX: The `chmod +x gradlew` step is now redundant but kept for safety/legacy.
+    # It was failing because gradlew didn't exist *before* the Configure Gradle Wrapper step.
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
     - name: Build with Gradle
+      # Using --stacktrace to capture full error details if build fails
       run: ./gradlew assembleDebug --stacktrace
       
     - name: Upload APK
