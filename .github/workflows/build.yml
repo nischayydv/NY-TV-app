@@ -1539,6 +1539,12 @@ jobs:
             <foreground android:drawable="@drawable/ic_launcher_foreground"/>
         </adaptive-icon>
         EOF
+    - name: Initialize Gradle Wrapper
+      run: |
+        # This command reads the existing build.gradle files and creates
+        # the 'gradlew' script and the 'gradle/wrapper' directory.
+        gradle wrapper
+
         
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
