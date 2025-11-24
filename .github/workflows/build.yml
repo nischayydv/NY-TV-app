@@ -1558,7 +1558,7 @@ jobs:
           touch app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
         fi
 
-    - name: Grant execute permission for gradlew (FIXED: Placed after gradlew creation)
+    - name: Grant execute permission for gradlew 
       run: chmod +x gradlew
       
     - name: Download Gradle Wrapper JAR (Fixes 'gradle-wrapper.jar: not found')
