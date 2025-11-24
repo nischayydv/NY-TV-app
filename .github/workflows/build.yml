@@ -1544,6 +1544,19 @@ jobs:
         # This command reads the existing build.gradle files and creates
         # the 'gradlew' script and the 'gradle/wrapper' directory.
         gradle wrapper
+    - name: Set Stable Gradle Wrapper Version
+      run: |
+        # Create the necessary wrapper directory
+        mkdir -p gradle/wrapper
+        
+        # Write the properties file to use a stable Gradle 8.7 distribution
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+        distributionPath=wrapper/dists
+        zipStorePath=wrapper/dists
+        zipStoreBase=GRADLE_USER_HOME
+        EOF
 
         
     - name: Grant execute permission for gradlew
