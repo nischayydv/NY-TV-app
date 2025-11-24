@@ -24,9 +24,9 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Configure Gradle Wrapper and Project Directories
+    - name: Configure Directories and Gradle Wrapper Version 🎯 (Fixes all 'No such file or directory' errors)
       run: |
-        # 1. FIX: Set the stable Gradle version (8.7 is compatible with Kotlin 1.9.20)
+        # 1. FIX: Set the stable Gradle version (8.7) to fix Kotlin incompatibility
         mkdir -p gradle/wrapper
         cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
         distributionBase=GRADLE_USER_HOME
@@ -36,17 +36,7 @@ jobs:
         zipStoreBase=GRADLE_USER_HOME
         EOF
         
-        # 2. FIX (Previous issue): Ensure the Adaptive Icon directory is created
-        mkdir -p app/src/main/res/mipmap-anydpi-v26
-        
-        # ... Include ALL your other 'mkdir -p' commands here ...
-        mkdir -p app/src/main/java/com/nytv/live/data/model
-        # ... etc ...
-
-
-    - name: Create Project Structure
-      run: |
-        # Create directory structure
+        # 2. Create ALL necessary project directories (Fixes old mkdir-related errors)
         mkdir -p app/src/main/java/com/nytv/live/data/model
         mkdir -p app/src/main/java/com/nytv/live/data/network
         mkdir -p app/src/main/java/com/nytv/live/data/repository
@@ -58,19 +48,17 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/drawable-v24
         mkdir -p app/src/main/res/anim
-        # 👇 ADD THIS LINE TO FIX THE ICON ERROR
-        mkdir -p app/src/main/res/mipmap-anydpi-v26
-        # 👆
+        mkdir -p app/src/main/res/mipmap-anydpi-v26 # Adaptive Icon Fix
         mkdir -p app/src/main/res/mipmap-hdpi
         mkdir -p app/src/main/res/mipmap-mdpi
         mkdir -p app/src/main/res/mipmap-xhdpi
         mkdir -p app/src/main/res/mipmap-xxhdpi
         mkdir -p app/src/main/res/mipmap-xxxhdpi
-        
-        # ... rest of your script ...
 
-        # ... rest of your script ...
 
+    - name: Create Project Files (Source Code, Layouts, Config)
+      run: |
+        # NOTE: All 'mkdir -p' commands have been moved to the previous step.
         
         # Create settings.gradle
         cat > settings.gradle << 'EOF'
@@ -1560,8 +1548,12 @@ jobs:
         </adaptive-icon>
         EOF
 
+    - name: Initialize Gradle Wrapper (Creates gradlew) 🚀
+      # This MUST run after the configuration files (settings.gradle, build.gradle) are created
+      run: gradle wrapper
         
     - name: Grant execute permission for gradlew
+      # This MUST run after the wrapper is initialized
       run: chmod +x gradlew
       
     - name: Build with Gradle
