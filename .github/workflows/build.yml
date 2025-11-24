@@ -1559,32 +1559,6 @@ jobs:
             <foreground android:drawable="@drawable/ic_launcher_foreground"/>
         </adaptive-icon>
         EOF
-    - name: Initialize Gradle Wrapper
-      run: |
-        # This command reads the existing build.gradle files and creates
-        # the 'gradlew' script and the 'gradle/wrapper' directory.
-        gradle wrapper
-
-    - name: Set Stable Gradle Wrapper Version and Directory Structure
-      run: |
-        # 1. FIX: Create the directory structure needed for the wrapper properties
-        mkdir -p gradle/wrapper
-        
-        # 2. FIX: Write the properties file to use a stable Gradle 8.7 distribution,
-        #         resolving the 9.2.0 compatibility errors.
-        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-        distributionBase=GRADLE_USER_HOME
-        distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
-        distributionPath=wrapper/dists
-        zipStorePath=wrapper/dists
-        zipStoreBase=GRADLE_USER_HOME
-        EOF
-        
-        # 3. FIX (Previous issue): Ensure the Adaptive Icon directory is created
-        mkdir -p app/src/main/res/mipmap-anydpi-v26
-        
-        # ... Add the rest of your mkdir -p commands here ...
-        # (e.g., mkdir -p app/src/main/java/com/nytv/live/data/model, etc.)
 
         
     - name: Grant execute permission for gradlew
